@@ -6,7 +6,7 @@ from datetime import date
 
 from conftest import query
 
-from pgi.config import ROOT
+from pgi.config import ROOT, State
 from pgi.pipeline import run
 
 CORR = ROOT / "data" / "demo" / "correction" / "grid_india_psp" / "05.06.26_NLDC_PSP_REVISED_SYNTHETIC.xlsx"
@@ -95,6 +95,20 @@ def test_missing_data_is_explicit(ws, cfg):
     row = gold(fresh, "KA", "2026-06-08")
     assert row[0] is None and row[4] == "MISSING"
     assert query(fresh, "SELECT COUNT(*) FROM gold_state_daily_energy")[0][0] == 21
+
+
+def test_adding_a_state_reparses_existing_files(ws, cfg):
+    wh = ws / "warehouse"
+    gj = State("GJ", "Gujarat", "WR", {"grid_india_psp": ["GUJARAT"], "wrldc_psp": ["GUJARAT"]})
+    wider = dataclasses.replace(cfg, states=cfg.states + [gj])
+    s = run(wider, ws / "landing", wh)
+    assert (s.files_new, s.gold_rows, s.gold_rows_changed) == (0, 28, 7)
+    assert query(wh, """SELECT COUNT(*) FROM gold_state_daily_energy
+                        WHERE state_code='GJ' AND quality_status='OK' AND corroborating_source='wrldc_psp'""")[0][0] == 7
+    # unchanged config afterwards: nothing re-parsed, nothing changes
+    s = run(wider, ws / "landing", wh)
+    assert s.gold_rows_changed == 0
+    assert query(wh, "SELECT COUNT(*) FROM silver_state_daily")[0][0] == 56  # 42 + 7 NLDC + 7 WRLDC
 
 
 def test_scope_change_is_audited(ws, cfg):

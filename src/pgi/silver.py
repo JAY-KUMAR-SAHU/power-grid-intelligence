@@ -2,9 +2,15 @@
 
 A file that fails to parse is quarantined (parse_status = 'failed', reason recorded) and the
 run continues; gold then falls back to the next source for the affected days.
+
+Parsers keep only the configured states, so a file's silver rows depend on the parser version
+AND on that source's state aliases. Both go into a parse signature; a file is re-parsed from its
+bronze copy whenever its stored signature differs (e.g. a state was added to the config).
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -19,23 +25,34 @@ class ParseResult:
     dq: list[dict] = field(default_factory=list)
 
 
+def source_aliases(cfg: Config, source: str) -> dict[str, list[str]]:
+    return {s.code: s.aliases[source] for s in cfg.states if source in s.aliases}
+
+
+def parse_signature(cfg: Config, source: str) -> str:
+    payload = {"parser": PARSER_VERSION, "aliases": dict(sorted(source_aliases(cfg, source).items()))}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
+
+
 def parse_pending(con, cfg: Config, run_id: int, warehouse_dir: Path) -> ParseResult:
     res = ParseResult()
-    todo = con.execute(
-        """SELECT file_id, source_id, bronze_path, original_name FROM bronze_file
-           WHERE parse_status = 'pending' OR parser_version IS DISTINCT FROM ?
-           ORDER BY ingested_at, file_id""",
-        [PARSER_VERSION],
-    ).fetchall()
-    for file_id, source, bronze_path, name in todo:
-        aliases = {s.code: s.aliases[source] for s in cfg.states if source in s.aliases}
+    files = con.execute(
+        """SELECT file_id, source_id, bronze_path, original_name, parse_status, parse_signature
+           FROM bronze_file ORDER BY ingested_at, file_id""").fetchall()
+    sigs = {}
+    for file_id, source, bronze_path, name, status, stored_sig in files:
+        sig = sigs.setdefault(source, parse_signature(cfg, source))
+        if status != "pending" and stored_sig == sig:
+            continue
+        aliases = source_aliases(cfg, source)
         base = {"run_id": run_id, "source_id": source, "file_id": file_id}
         try:
             rep = parse_file(source, warehouse_dir / bronze_path, aliases)
         except ParseError as e:
             con.execute(
-                "UPDATE bronze_file SET parse_status='failed', parse_error=?, parser_version=? WHERE file_id=?",
-                [str(e), PARSER_VERSION, file_id])
+                """UPDATE bronze_file SET parse_status='failed', parse_error=?, parser_version=?, parse_signature=?
+                   WHERE file_id=?""",
+                [str(e), PARSER_VERSION, sig, file_id])
             res.failed += 1
             res.dq.append({**base, "check_id": "parse_failed", "severity": "ERROR", "scope": "file",
                            "detail": f"{name}: {e}"})
@@ -49,8 +66,8 @@ def parse_pending(con, cfg: Config, run_id: int, warehouse_dir: Path) -> ParseRe
                  r.energy_requirement_mu, r.raw_label, r.location, PARSER_VERSION])
         con.execute(
             """UPDATE bronze_file SET parse_status='parsed', parse_error=NULL, parser_version=?,
-                   operating_date=?, reporting_date=? WHERE file_id=?""",
-            [PARSER_VERSION, rep.operating_date, rep.reporting_date, file_id])
+                   parse_signature=?, operating_date=?, reporting_date=? WHERE file_id=?""",
+            [PARSER_VERSION, sig, rep.operating_date, rep.reporting_date, file_id])
         res.parsed += 1
 
         if rep.missing_states:

@@ -27,7 +27,7 @@ pgi run        # ingest -> parse -> DQ -> gold (rerun any time; it is idempotent
 pgi status     # recent runs, gold rows, quarantined files
 pgi report     # writes reports/analysis.md (example analysis)
 pgi demo       # writes reports/demo_output.md (rerun, late file, correction, failure)
-pytest         # 19 tests, ~1 min
+pytest         # 20 tests, ~1 min
 ```
 
 `python -m pgi ...` works too. The warehouse lives in `./warehouse/` (DuckDB file +
@@ -154,7 +154,7 @@ Real issues found in the samples:
 | **Failure** | Bronze registration commits first (raw data is never lost). Parsing is per file: a bad file is quarantined with the reason. Silver + DQ + gold are written in **one transaction**: any exception rolls back to the previous gold and marks the run `failed`. The next run picks up where it stopped. |
 | **Late file** | Just another new file. Gold is recomputed for all in-scope days, so the affected state-day updates (e.g. WARN `single_source` → OK) and the change is audited. |
 | **Correction / revision** | A second file for the same (source, day) is a new version. The **latest publication time** wins, with arrival order as tiebreak or when the time is unknown. An *older* version arriving late therefore doesn't override a newer one. All versions stay in silver; gold notes `revised(vN)`; history records old → new. |
-| **Scope change** | Changing window or states in config and rerunning removes out-of-scope gold rows, recorded as `delete` in history. |
+| **Scope change** | Edit window or states in config and rerun. Rows that leave scope are removed and recorded as `delete` in history. A newly added state is picked up from the files already stored: each file records a parse signature (parser version + that source's state labels), and a changed signature triggers a re-parse from bronze, with no re-download. |
 
 `pgi demo` shows all of these in a temporary workspace ([output](reports/demo_output.md)):
 initial load with a held-back SRLDC file, a no-op rerun, the late file arriving, a revised NLDC

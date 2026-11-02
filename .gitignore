@@ -4,3 +4,6 @@ warehouse/
 __pycache__/
 *.egg-info/
 .pytest_cache/
+# private prep docs (kept local, not published)
+CLAUDE.md
+docs/

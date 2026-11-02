@@ -35,9 +35,13 @@ CREATE TABLE IF NOT EXISTS bronze_file (
     parse_status    VARCHAR,              -- pending | parsed | failed
     parse_error     VARCHAR,
     parser_version  VARCHAR,
+    parse_signature VARCHAR,              -- hash(parser version + source's state aliases)
     operating_date  DATE,
     reporting_date  DATE
 );
+
+-- Upgrade warehouses created before parse_signature existed.
+ALTER TABLE bronze_file ADD COLUMN IF NOT EXISTS parse_signature VARCHAR;
 
 -- Silver: standardised state-day values, one row per (file, state). All versions kept.
 CREATE TABLE IF NOT EXISTS silver_state_daily (
