@@ -1,0 +1,6 @@
+personal-details/
+.venv/
+warehouse/
+__pycache__/
+*.egg-info/
+.pytest_cache/

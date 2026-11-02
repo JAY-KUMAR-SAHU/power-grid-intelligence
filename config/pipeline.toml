@@ -1,0 +1,49 @@
+# Pipeline configuration. Scope, source priority and data-quality tolerances live here
+# so that a requirement change is a config edit, not a code change.
+
+[window]
+start = "2026-06-02"   # first operating day (inclusive, IST)
+end   = "2026-06-08"   # last operating day (inclusive, IST)
+
+# Source priority for the gold table, highest first. "rldc" resolves to the regional
+# load despatch centre report of the state's region (see [regions]).
+[priority]
+order = ["grid_india_psp", "rldc"]
+
+[regions]
+NR = "nrldc_psp"
+WR = "wrldc_psp"
+SR = "srldc_psp"
+
+[dq]
+# Cross-source agreement on energy supplied: pass if |diff| <= max(abs_mu, pct% of value).
+cross_source_abs_mu = 0.5
+cross_source_pct    = 0.5
+# Reported requirement vs met + shortage. RLDC reports round to 0.1 MU, so allow rounding slack.
+identity_tolerance_mu = 0.15
+# Day-over-day change in energy supplied above this % is flagged as a possible outlier.
+day_over_day_pct = 25.0
+
+[[states]]
+code   = "UP"
+name   = "Uttar Pradesh"
+region = "NR"
+[states.aliases]
+grid_india_psp = ["UP"]
+nrldc_psp      = ["UTTARPRADESH"]
+
+[[states]]
+code   = "MH"
+name   = "Maharashtra"
+region = "WR"
+[states.aliases]
+grid_india_psp = ["MAHARASHTRA"]
+wrldc_psp      = ["MAHARASHTRA"]
+
+[[states]]
+code   = "KA"
+name   = "Karnataka"
+region = "SR"
+[states.aliases]
+grid_india_psp = ["KARNATAKA"]
+srldc_psp      = ["KARNATAKA"]
